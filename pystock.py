@@ -1,5 +1,28 @@
 import PySimpleGUI as sg
 
+def search_stock():
+    layout = [
+        [sg.Text('종목 이름을 입력하세요', expand_x=True, justification='center')],
+        [sg.InputText(key='-STOCK-NAME-', expand_x=True)],
+        [sg.Button('검색', expand_x=True), sg.Button('뒤로가기', expand_x=True)]
+    ]
+
+    window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
+
+    while True:
+        event, values = window.read()
+        if event in (sg.WIN_CLOSED, '뒤로가기'):
+            break
+        elif event == '검색':
+            stock_name = values['-STOCK-NAME-'].strip()
+            if stock_name:
+                print(f"🔍 입력된 종목 이름 : {stock_name}")
+                print("❌ 없는 주식입니다.")
+            else:
+                print("⚠️ 종목 이름을 입력하세요.")
+
+    window.close()
+
 def main_menu():
     sg.theme('LightBlue')
 
@@ -18,7 +41,7 @@ def main_menu():
         if event in (sg.WIN_CLOSED, '종료'):
             break
         elif event == '-SEARCH-':
-            print("👉 주식 검색 기능으로 이동")
+            search_stock()
         elif event == '-COMPARE-':
             print("👉 주식 비교 기능으로 이동")
         elif event == '-POPULAR-':
