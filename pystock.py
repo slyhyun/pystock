@@ -178,13 +178,36 @@ def get_stock_info(stock_code):
         print("❌ 전체 페이지 파싱 실패:", e)
         return None
 
+# 일별 시세 테이블 조회
+def get_price_table(stock_code, pages=3):
+    dfs = []
+    for page in range(1, pages + 1):
+        url = f'https://finance.naver.com/item/sise_day.nhn?code={stock_code}&page={page}'
+        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        df = pd.read_html(res.text, header=0)[0]
+        dfs.append(df)
+    df_all = pd.concat(dfs)
+    df_all = df_all.dropna()
+    df_all['날짜'] = pd.to_datetime(df_all['날짜'])
+    df_all = df_all.rename(columns={
+        '날짜': 'Date',
+        '시가': 'Open',
+        '고가': 'High',
+        '저가': 'Low',
+        '종가': 'Close',
+        '거래량': 'Volume'
+    })
+    df_all.set_index('Date', inplace=True)
+    df_all = df_all.sort_index()
+    return df_all
+
 # 주식 검색 창
 def search_stock():
     layout = [
         [sg.Text('종목 이름을 입력하세요', expand_x=True, justification='center', font=('Helvetica', 16))],
         [sg.InputText(key='-STOCK-NAME-', expand_x=True, font=('Helvetica', 16))],
         [sg.Button('검색', expand_x=True, font=('Helvetica', 16)), sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))],
-        [sg.Multiline(key='-RESULT-', size=(60, 5), font=('Helvetica', 16), disabled=True)]
+        [sg.Multiline(key='-RESULT-', size=(70, 20), font=('Consolas', 12), disabled=True)]
     ]
 
     window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
@@ -218,6 +241,15 @@ def search_stock():
             result = f"회사명 : {matched_name}\n종목코드 : {stock_code}\n\n"
             for k, v in info.items():
                 result += f"{k} : {v}\n"
+
+            # 시세 테이블 조회
+            df = get_price_table(stock_code)
+            if not df.empty:
+                result += "\n📅 최근 시세 (최신순 5개)\n"
+                result += df[['Open', 'High', 'Low', 'Close', 'Volume']].tail(5).iloc[::-1].to_string()
+            else:
+                result += "\n📅 시세 데이터가 없습니다.\n"
+
             window['-RESULT-'].update(result)
 
     window.close()
