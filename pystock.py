@@ -1,8 +1,10 @@
 import PySimpleGUI as sg
 import requests
 from bs4 import BeautifulSoup
+import mplfinance as mpf
 import pandas as pd
 import io
+import os
 
 # 종목 이름으로 코드 가져오기
 def get_stock_code(stock_name):
@@ -178,7 +180,7 @@ def get_stock_info(stock_code):
         print("❌ 전체 페이지 파싱 실패:", e)
         return None
 
-# 일별 시세 테이블 조회
+# 일별 시세 테이블 크롤링
 def get_price_table(stock_code, pages=3):
     dfs = []
     for page in range(1, pages + 1):
@@ -189,25 +191,25 @@ def get_price_table(stock_code, pages=3):
     df_all = pd.concat(dfs)
     df_all = df_all.dropna()
     df_all['날짜'] = pd.to_datetime(df_all['날짜'])
-    df_all = df_all.rename(columns={
-        '날짜': 'Date',
-        '시가': 'Open',
-        '고가': 'High',
-        '저가': 'Low',
-        '종가': 'Close',
-        '거래량': 'Volume'
-    })
+    df_all = df_all.rename(columns={'날짜': 'Date', '시가': 'Open', '고가': 'High', '저가': 'Low', '종가': 'Close', '거래량': 'Volume'})
     df_all.set_index('Date', inplace=True)
     df_all = df_all.sort_index()
     return df_all
 
+# 캔들차트 이미지로 저장
+def plot_candle_chart(df, filename='chart.png'):
+    mc = mpf.make_marketcolors(up='red', down='blue', edge='inherit', wick='gray', volume='inherit')
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle='--')
+    mpf.plot(df, type='candle', style=s, volume=True, savefig=filename)
+
 # 주식 검색 창
-def search_stock():
+def search_stock_window():
     layout = [
         [sg.Text('종목 이름을 입력하세요', expand_x=True, justification='center', font=('Helvetica', 16))],
         [sg.InputText(key='-STOCK-NAME-', expand_x=True, font=('Helvetica', 16))],
         [sg.Button('검색', expand_x=True, font=('Helvetica', 16)), sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))],
-        [sg.Multiline(key='-RESULT-', size=(70, 20), font=('Consolas', 12), disabled=True)]
+        [sg.Image(key='-CHART-')],
+        [sg.Multiline(key='-INFO-', size=(60, 5), font=('Consolas', 16), disabled=True)]
     ]
 
     window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
@@ -222,37 +224,47 @@ def search_stock():
             stock_name = values['-STOCK-NAME-'].strip()
             # 입력하지 않았을 때
             if not stock_name:
-                window['-RESULT-'].update("⚠️ 종목 이름을 입력하세요.")
+                print("⚠️ 종목 이름을 입력하세요.")
                 continue
 
+            print(f"🔍 입력된 종목 이름 : {stock_name}")
             matched_name, stock_code = get_stock_code(stock_name)
             # 일치하는 종목이 없을 때
             if not stock_code:
-                window['-RESULT-'].update("❌ 해당 종목을 찾을 수 없습니다.")
+                print("❌ 없는 주식입니다.")
+                window['-INFO-'].update("❌ 없는 주식입니다.")
+                window['-CHART-'].update(data=None)
                 continue
-            
+
             info = get_stock_info(stock_code)
-            # 크롤링에 실패했을 때
+            # 주식 정보 크롤링에 실패했을 때
             if not info:
-                window['-RESULT-'].update("❌ 주식 정보 조회 실패")
+                window['-INFO-'].update("❌ 주식 정보 조회 실패")
                 continue
             
-            # 크롤링에 성공했을 때
-            result = f"회사명 : {matched_name}\n종목코드 : {stock_code}\n\n"
-            for k, v in info.items():
-                result += f"{k} : {v}\n"
-
-            # 시세 테이블 조회
             df = get_price_table(stock_code)
-            if not df.empty:
-                result += "\n📅 최근 시세 (최신순 5개)\n"
-                result += df[['Open', 'High', 'Low', 'Close', 'Volume']].tail(5).iloc[::-1].to_string()
-            else:
-                result += "\n📅 시세 데이터가 없습니다.\n"
+            # 시세 테이블 크롤링에 실패했을 때
+            if df.empty:
+                window['-INFO-'].update("❌ 시세 정보가 부족합니다.")
+                window['-CHART-'].update(data=None)
+                continue
 
-            window['-RESULT-'].update(result)
+            plot_candle_chart(df)
+            # 시세 차트 그리기
+            with open('chart.png', 'rb') as f:
+                img = f.read()
+
+            # 크롤링에 성공했을 때
+            info_text = f"[{matched_name}] ({stock_code})\n"
+            for k, v in info.items():
+                info_text += f"{k}: {v}\n"
+
+            window['-INFO-'].update(info_text)
+            window['-CHART-'].update(data=img)
 
     window.close()
+    if os.path.exists('chart.png'):
+        os.remove('chart.png')
 
 # 메인 메뉴
 def main_menu():
@@ -275,7 +287,7 @@ def main_menu():
             break
         # 주식 검색 버튼
         elif event == '-SEARCH-':
-            search_stock()
+            search_stock_window()
         # 주식 비교 버튼
         elif event == '-COMPARE-':
             print("👉 주식 비교 기능으로 이동")
