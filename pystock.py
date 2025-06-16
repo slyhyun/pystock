@@ -36,33 +36,146 @@ def get_stock_code(stock_name):
     
 # 종목 정보 가져오기 (네이버 금융)
 def get_stock_info(stock_code):
+    url = f"https://finance.naver.com/item/main.nhn?code={stock_code}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    info = {}
+
     try:
-        url = f"https://finance.naver.com/item/main.nhn?code={stock_code}"
-        headers = {'User-Agent': 'Mozilla/5.0'}
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        info = {}
-        
-        # 결측값 처리 및 단위 작성 함수
         def safe_text(selector, suffix='', default='N/A'):
             try:
-                text = selector.text.strip()
+                text = selector.text.strip().replace(suffix, '').replace('\xa0', '')
                 return text + suffix if text and text != 'N/A' else default
             except:
                 return default
 
+        # 현재가
         info['현재가'] = safe_text(soup.select_one('p.no_today span.blind'), '원')
-        info['PER'] = safe_text(soup.select_one('em#_per'), '배')
-        info['EPS'] = safe_text(soup.select_one('em#_eps'), '원')
-        info['PBR'] = safe_text(soup.select_one('em#_pbr'), '배')
-        info['BPS'] = safe_text(soup.select_one('em#_bps'), '원')
 
-        return info
-    
-    # 크롤링 실패시 처리
+        # 전일 대비 및 등락률
+        try:
+            # 전일 대비
+            diff_td = soup.select_one('th:contains("전일대비") + td em')
+            if diff_td:
+                span = diff_td.find('span')
+                direction_text = span.text.strip() if span else ''
+                full_text = diff_td.get_text(strip=True)
+                price_only = full_text.replace(direction_text, '').replace('원', '').strip()
+                info['전일 대비'] = f"{price_only}원 {direction_text}" if price_only else 'N/A'
+
+            # 등락률
+            rate_td = soup.select_one('th:contains("등락률") + td em')
+            if rate_td:
+                raw_rate = rate_td.text.strip().replace('상향', '').replace('하향', '').replace('%', '').strip()
+                info['등락률'] = raw_rate + '%' if raw_rate else 'N/A'
+        except Exception as e:
+            print("❌ 전일대비/등락률 가져오기 실패:", e)
+
+        # 시가 / 고가 / 저가 / 거래량 / 거래대금 (정확한 위치 기반 추출)
+        try:
+            label_map = {
+                '전일': ('전일가', '원'),
+                '고가': ('고가', '원'),
+                '시가': ('시가', '원'),
+                '저가': ('저가', '원'),
+                '거래량': ('거래량', '주'),
+                '거래대금': ('거래대금', '백만')
+            }
+
+            rate_info = soup.select_one('div.rate_info')  # ✅ 기본 주가 정보 섹션만 선택
+            if rate_info:
+                for td in rate_info.select('table.no_info td'):
+                    label_span = td.select_one('span.sptxt')
+                    value_em = td.select_one('em span.blind')
+                    if label_span and value_em:
+                        label_text = label_span.text.strip().replace('(', '').replace(')', '')
+                        if label_text in label_map:
+                            key, unit = label_map[label_text]
+                            val = value_em.text.strip().replace(unit, '')
+                            info[key] = val + unit if val else 'N/A'
+        except Exception as e:
+            print("❌ 시세 데이터 (시가, 고가 등) 정밀 추출 실패:", e)
+
+
+        # 시가총액
+        try:
+            market_sum = soup.select_one('#_market_sum')
+            if market_sum:
+                parts = market_sum.text.strip().split()
+                info['시가총액'] = ' '.join(parts) + '억원' if len(parts) == 2 else market_sum.text.strip() + '억원'
+        except Exception as e:
+            print("❌ 시가총액 가져오기 실패:", e)
+
+        # PER, EPS
+        try:
+            info['PER'] = safe_text(soup.select_one('em#_per'), '배')
+            info['EPS'] = safe_text(soup.select_one('em#_eps'), '원')
+        except Exception as e:
+            print("❌ PER 또는 EPS 가져오기 실패:", e)
+
+        # 추정 PER, EPS
+        try:
+            info['추정 PER'] = safe_text(soup.select_one('em#_cns_per'), '배')
+            info['추정 EPS'] = safe_text(soup.select_one('em#_cns_eps'), '원')
+        except Exception as e:
+            print("❌ 추정 PER 또는 EPS 가져오기 실패:", e)
+
+        # PBR, BPS
+        try:
+            pbr_tr = soup.select_one('table.per_table').select('tr')[2]
+            ems = pbr_tr.select('em')
+            pbr_val = ems[0].text.strip().replace('배', '')
+            bps_val = ems[1].text.strip().replace('원', '')
+            info['PBR'] = pbr_val + '배' if pbr_val else 'N/A'
+            info['BPS'] = bps_val + '원' if bps_val else 'N/A'
+        except Exception as e:
+            print("❌ PBR 또는 BPS 가져오기 실패:", e)
+
+        # 배당수익률
+        try:
+            for th in soup.select('table.per_table th'):
+                if '배당수익률' in th.text:
+                    td = th.find_next_sibling('td')
+                    if td:
+                        em = td.find('em')
+                        val = em.text.strip().replace('%', '') if em else ''
+                        info['배당수익률'] = val + '%' if val else 'N/A'
+                    break
+        except Exception as e:
+            print("❌ 배당수익률 가져오기 실패:", e)
+
+        # 외국인소진율
+        try:
+            for th in soup.select('th'):
+                if '외국인소진율' in th.text:
+                    td = th.find_next_sibling('td')
+                    if td:
+                        em = td.find('em')
+                        val = em.text.strip().replace('%', '') if em else ''
+                        info['외국인소진율'] = val + '%' if val else 'N/A'
+                    break
+        except Exception as e:
+            print("❌ 외국인소진율 가져오기 실패:", e)
+
+        # 동일업종 PER
+        try:
+            for th in soup.select('th'):
+                if '동일업종 PER' in th.text:
+                    td = th.find_next_sibling('td')
+                    if td:
+                        em = td.find('em')
+                        val = em.text.strip().replace('배', '') if em else ''
+                        info['동일업종 PER'] = val + '배' if val else 'N/A'
+                    break
+        except Exception as e:
+            print("❌ 동일업종 PER 가져오기 실패:", e)
+
+        return info if info else None
+
     except Exception as e:
-        print("❌ 종목 정보 크롤링 실패:", e)
+        print("❌ 전체 페이지 파싱 실패:", e)
         return None
 
 # 주식 검색 창
