@@ -13,7 +13,7 @@ def get_stock_code(stock_name):
         res = requests.get(url)
         df = pd.read_html(io.StringIO(res.text), header=0)[0]
         df = df[['회사명', '종목코드']]
-        df['종목코드'] = df['종목코드'].apply(lambda x: f"{x:06d}")
+        df['종목코드'] = df['종목코드'].apply(lambda x : f"{x:06d}")
         df['회사명'] = df['회사명'].str.strip()
         search_name = stock_name.strip().lower()
 
@@ -33,13 +33,13 @@ def get_stock_code(stock_name):
         return None, None
     # 해당 단어가 포함된 종목이 없을 때
     except Exception as e:
-        print("❌ 종목 코드 조회 실패:", e)
+        print("❌ 종목 코드 조회 실패 :", e)
         return None, None
     
 # 종목 정보 가져오기 (네이버 금융)
 def get_stock_info(stock_code):
     url = f"https://finance.naver.com/item/main.nhn?code={stock_code}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent' : 'Mozilla/5.0'}
     info = {}
 
     try:
@@ -73,20 +73,20 @@ def get_stock_info(stock_code):
                 raw_rate = rate_td.text.strip().replace('상향', '').replace('하향', '').replace('%', '').strip()
                 info['등락률'] = raw_rate + '%' if raw_rate else 'N/A'
         except Exception as e:
-            print("❌ 전일대비/등락률 가져오기 실패:", e)
+            print("❌ 전일대비/등락률 가져오기 실패 :", e)
 
         # 시가 / 고가 / 저가 / 거래량 / 거래대금 (정확한 위치 기반 추출)
         try:
             label_map = {
-                '전일': ('전일가', '원'),
-                '고가': ('고가', '원'),
-                '시가': ('시가', '원'),
-                '저가': ('저가', '원'),
-                '거래량': ('거래량', '주'),
-                '거래대금': ('거래대금', '백만')
+                '전일' : ('전일가', '원'),
+                '고가' : ('고가', '원'),
+                '시가' : ('시가', '원'),
+                '저가' : ('저가', '원'),
+                '거래량' : ('거래량', '주'),
+                '거래대금' : ('거래대금', '백만')
             }
 
-            rate_info = soup.select_one('div.rate_info')  # ✅ 기본 주가 정보 섹션만 선택
+            rate_info = soup.select_one('div.rate_info')
             if rate_info:
                 for td in rate_info.select('table.no_info td'):
                     label_span = td.select_one('span.sptxt')
@@ -98,7 +98,7 @@ def get_stock_info(stock_code):
                             val = value_em.text.strip().replace(unit, '')
                             info[key] = val + unit if val else 'N/A'
         except Exception as e:
-            print("❌ 시세 데이터 (시가, 고가 등) 정밀 추출 실패:", e)
+            print("❌ 시세 데이터 가져오기 실패 :", e)
 
 
         # 시가총액
@@ -108,21 +108,21 @@ def get_stock_info(stock_code):
                 parts = market_sum.text.strip().split()
                 info['시가총액'] = ' '.join(parts) + '억원' if len(parts) == 2 else market_sum.text.strip() + '억원'
         except Exception as e:
-            print("❌ 시가총액 가져오기 실패:", e)
+            print("❌ 시가총액 가져오기 실패 :", e)
 
         # PER, EPS
         try:
             info['PER'] = safe_text(soup.select_one('em#_per'), '배')
             info['EPS'] = safe_text(soup.select_one('em#_eps'), '원')
         except Exception as e:
-            print("❌ PER 또는 EPS 가져오기 실패:", e)
+            print("❌ PER 또는 EPS 가져오기 실패 :", e)
 
         # 추정 PER, EPS
         try:
             info['추정 PER'] = safe_text(soup.select_one('em#_cns_per'), '배')
             info['추정 EPS'] = safe_text(soup.select_one('em#_cns_eps'), '원')
         except Exception as e:
-            print("❌ 추정 PER 또는 EPS 가져오기 실패:", e)
+            print("❌ 추정 PER 또는 EPS 가져오기 실패 :", e)
 
         # PBR, BPS
         try:
@@ -133,7 +133,7 @@ def get_stock_info(stock_code):
             info['PBR'] = pbr_val + '배' if pbr_val else 'N/A'
             info['BPS'] = bps_val + '원' if bps_val else 'N/A'
         except Exception as e:
-            print("❌ PBR 또는 BPS 가져오기 실패:", e)
+            print("❌ PBR 또는 BPS 가져오기 실패 :", e)
 
         # 배당수익률
         try:
@@ -146,7 +146,7 @@ def get_stock_info(stock_code):
                         info['배당수익률'] = val + '%' if val else 'N/A'
                     break
         except Exception as e:
-            print("❌ 배당수익률 가져오기 실패:", e)
+            print("❌ 배당수익률 가져오기 실패 :", e)
 
         # 외국인소진율
         try:
@@ -159,7 +159,7 @@ def get_stock_info(stock_code):
                         info['외국인소진율'] = val + '%' if val else 'N/A'
                     break
         except Exception as e:
-            print("❌ 외국인소진율 가져오기 실패:", e)
+            print("❌ 외국인소진율 가져오기 실패 :", e)
 
         # 동일업종 PER
         try:
@@ -172,12 +172,12 @@ def get_stock_info(stock_code):
                         info['동일업종 PER'] = val + '배' if val else 'N/A'
                     break
         except Exception as e:
-            print("❌ 동일업종 PER 가져오기 실패:", e)
+            print("❌ 동일업종 PER 가져오기 실패 :", e)
 
         return info if info else None
 
     except Exception as e:
-        print("❌ 전체 페이지 파싱 실패:", e)
+        print("❌ 전체 페이지 파싱 실패 :", e)
         return None
 
 # 일별 시세 테이블 크롤링
@@ -185,16 +185,27 @@ def get_price_table(stock_code, pages=3):
     dfs = []
     for page in range(1, pages + 1):
         url = f'https://finance.naver.com/item/sise_day.nhn?code={stock_code}&page={page}'
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        res = requests.get(url, headers={'User-Agent' : 'Mozilla/5.0'})
         df = pd.read_html(res.text, header=0)[0]
         dfs.append(df)
     df_all = pd.concat(dfs)
     df_all = df_all.dropna()
     df_all['날짜'] = pd.to_datetime(df_all['날짜'])
-    df_all = df_all.rename(columns={'날짜': 'Date', '시가': 'Open', '고가': 'High', '저가': 'Low', '종가': 'Close', '거래량': 'Volume'})
+    df_all = df_all.rename(columns={'날짜' : 'Date', '시가' : 'Open', '고가' : 'High', '저가' : 'Low', '종가' : 'Close', '거래량' : 'Volume'})
     df_all.set_index('Date', inplace=True)
     df_all = df_all.sort_index()
     return df_all
+
+# 캔들차트 재구성
+def resample_ohlcv(df, rule='W'):
+    ohlcv = {
+        'Open' : 'first',
+        'High' : 'max',
+        'Low' : 'min',
+        'Close' : 'last',
+        'Volume' : 'sum'
+    }
+    return df.resample(rule).apply(ohlcv).dropna()
 
 # 캔들차트 이미지로 저장
 def plot_candle_chart(df, filename='chart.png'):
@@ -205,33 +216,52 @@ def plot_candle_chart(df, filename='chart.png'):
 # 주식 검색 창
 def search_stock_window():
     layout = [
-        [sg.Text('종목 이름을 입력하세요', expand_x=True, justification='center', font=('Helvetica', 16))],
-        [sg.InputText(key='-STOCK-NAME-', expand_x=True, font=('Helvetica', 16))],
+        [sg.Text('종목 이름을 입력하세요', font=('Helvetica', 16))],
+        [sg.InputText(key='-STOCK-NAME-', font=('Helvetica', 16))],
+        [sg.Button('일봉', key='-D-', font=('Helvetica', 16)), sg.Button('주봉', key='-W-', font=('Helvetica', 16)), sg.Button('월봉', key='-M-', font=('Helvetica', 16))],
         [sg.Button('검색', expand_x=True, font=('Helvetica', 16)), sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))],
         [sg.Image(key='-CHART-')],
         [sg.Multiline(key='-INFO-', size=(60, 5), font=('Consolas', 16), disabled=True)]
     ]
 
     window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
+    chart_period = 'D'
+    pages_map = {'D' : 3, 'W' : 15, 'M' : 60}
+    last_stock_name = ''
 
     while True:
         event, values = window.read()
         # 뒤로가기 버튼
         if event in (sg.WIN_CLOSED, '뒤로가기'):
             break
+
+        if event in ['-D-', '-W-', '-M-']:
+            chart_period = event.strip('-')
+            if last_stock_name:
+                matched_name, stock_code = get_stock_code(last_stock_name)
+                if not stock_code:
+                    window['-INFO-'].update("❌ 없는 주식입니다.")
+                    window['-CHART-'].update(data=None)
+                    continue
+                df = get_price_table(stock_code, pages=pages_map[chart_period])
+                if chart_period in ['W', 'M']:
+                    df = resample_ohlcv(df, rule=chart_period)
+                plot_candle_chart(df)
+                with open('chart.png', 'rb') as f:
+                    img = f.read()
+                window['-CHART-'].update(data=img)
+
         # 검색 버튼
-        elif event == '검색':
+        if event == '검색':
             stock_name = values['-STOCK-NAME-'].strip()
-            # 입력하지 않았을 때
             if not stock_name:
-                print("⚠️ 종목 이름을 입력하세요.")
+                window['-INFO-'].update("⚠️ 종목 이름을 입력하세요.")
                 continue
 
-            print(f"🔍 입력된 종목 이름 : {stock_name}")
+            last_stock_name = stock_name
             matched_name, stock_code = get_stock_code(stock_name)
             # 일치하는 종목이 없을 때
             if not stock_code:
-                print("❌ 없는 주식입니다.")
                 window['-INFO-'].update("❌ 없는 주식입니다.")
                 window['-CHART-'].update(data=None)
                 continue
@@ -242,13 +272,16 @@ def search_stock_window():
                 window['-INFO-'].update("❌ 주식 정보 조회 실패")
                 continue
             
-            df = get_price_table(stock_code)
+            df = get_price_table(stock_code, pages=pages_map[chart_period])
             # 시세 테이블 크롤링에 실패했을 때
             if df.empty:
                 window['-INFO-'].update("❌ 시세 정보가 부족합니다.")
                 window['-CHART-'].update(data=None)
                 continue
-
+            
+            if chart_period in ['W', 'M']:
+                df = resample_ohlcv(df, rule=chart_period)
+            
             plot_candle_chart(df)
             # 시세 차트 그리기
             with open('chart.png', 'rb') as f:
@@ -257,7 +290,7 @@ def search_stock_window():
             # 크롤링에 성공했을 때
             info_text = f"[{matched_name}] ({stock_code})\n"
             for k, v in info.items():
-                info_text += f"{k}: {v}\n"
+                info_text += f"{k} : {v}\n"
 
             window['-INFO-'].update(info_text)
             window['-CHART-'].update(data=img)
