@@ -221,7 +221,7 @@ def search_stock_window():
         [sg.Button('일봉', key='-D-', font=('Helvetica', 16)), sg.Button('주봉', key='-W-', font=('Helvetica', 16)), sg.Button('월봉', key='-M-', font=('Helvetica', 16))],
         [sg.Button('검색', expand_x=True, font=('Helvetica', 16)), sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))],
         [sg.Image(key='-CHART-')],
-        [sg.Multiline(key='-INFO-', size=(60, 5), font=('Consolas', 16), disabled=True)]
+        [sg.Multiline(key='-INFO-', size=(70, 10), font=('Consolas', 16), disabled=True)]
     ]
 
     window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
@@ -235,15 +235,20 @@ def search_stock_window():
         if event in (sg.WIN_CLOSED, '뒤로가기'):
             break
 
+        # 사용자가 일봉/주봉/월봉 버튼 중 하나를 클릭했을 때
         if event in ['-D-', '-W-', '-M-']:
             chart_period = event.strip('-')
             if last_stock_name:
+                # 종목명으로 종목 코드 조회
                 matched_name, stock_code = get_stock_code(last_stock_name)
+                # 종목이 없는 경우
                 if not stock_code:
                     window['-INFO-'].update("❌ 없는 주식입니다.")
                     window['-CHART-'].update(data=None)
                     continue
+                # 있는 경우 시세 정보 주기 가져오기
                 df = get_price_table(stock_code, pages=pages_map[chart_period])
+                # 주봉, 월봉인 경우 재구성
                 if chart_period in ['W', 'M']:
                     df = resample_ohlcv(df, rule=chart_period)
                 plot_candle_chart(df)
@@ -299,6 +304,85 @@ def search_stock_window():
     if os.path.exists('chart.png'):
         os.remove('chart.png')
 
+# 주식 비교 창
+def compare_stock_window():
+    layout = [
+        [sg.Text('종목1 :', font=('Helvetica', 16)), sg.InputText(key='-STOCK1-', font=('Helvetica', 16)), sg.Text('종목2 :', font=('Helvetica', 16)), sg.InputText(key='-STOCK2-', font=('Helvetica', 16))],
+        [sg.Button('일봉', key='-D-', font=('Helvetica', 16)), sg.Button('주봉', key='-W-', font=('Helvetica', 16)), sg.Button('월봉', key='-M-', font=('Helvetica', 16))],
+        [sg.Button('검색', expand_x=True, font=('Helvetica', 16)), sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))],
+        [sg.Column([[sg.Image(key='-CHART1-')]]), sg.Column([[sg.Image(key='-CHART2-')]])],
+        [sg.Multiline(key='-INFO1-', size=(70, 10), font=('Consolas', 16), disabled=True),
+         sg.Multiline(key='-INFO2-', size=(70, 10), font=('Consolas', 16), disabled=True)]
+    ]
+    window = sg.Window('주식 비교', layout, resizable=True, modal=True, element_justification='c')
+    chart_period = 'D'
+    pages_map = {'D' : 3, 'W' : 15, 'M' : 60}
+    stock_names = ['', '']
+
+    def update_stock(index):
+        name, code = get_stock_code(stock_names[index])
+        # 일치하는 종목이 없을 때
+        if not code:
+            window[f'-INFO{index+1}-'].update("❌ 없는 주식입니다.")
+            window[f'-CHART{index+1}-'].update(data=None)
+            return
+        
+        # 주식 정보 가져오기
+        info = get_stock_info(code)
+        # 주식 정보 크롤링에 실패했을 때
+        if not info:
+            window[f'-INFO{index+1}-'].update("❌ 주식 정보 조회 실패")
+            window[f'-CHART{index+1}-'].update(data=None)
+            return
+
+        # 시세 정보 가져오기
+        df = get_price_table(code, pages=pages_map[chart_period])
+        # 시세 정보 크롤링에 실패했을 때
+        if df.empty:
+            window[f'-INFO{index+1}-'].update("❌ 시세 정보가 부족합니다.")
+            window[f'-CHART{index+1}-'].update(data=None)
+            return
+
+        # 주봉, 일봉인 경우 재구성
+        if chart_period in ['W', 'M']:
+            df = resample_ohlcv(df, rule=chart_period)
+        filename = f'chart{index+1}.png'
+        plot_candle_chart(df, filename=filename)
+        with open(filename, 'rb') as f:
+            img = f.read()
+        info_text = f"[{name}] ({code})\n"
+        for k, v in info.items():
+            info_text += f"{k}: {v}\n"
+        window[f'-INFO{index+1}-'].update(info_text)
+        window[f'-CHART{index+1}-'].update(data=img)
+
+    while True:
+        event, values = window.read()
+        # 뒤로가기 버튼
+        if event in (sg.WIN_CLOSED, '뒤로가기'):
+            break
+        # 주기 변경 시
+        if event in ['-D-', '-W-', '-M-']:
+            chart_period = event.strip('-')
+            if all(stock_names):
+                update_stock(0)
+                update_stock(1)
+        # 검색 버튼 
+        if event == '검색':
+            stock_names[0] = values['-STOCK1-'].strip()
+            stock_names[1] = values['-STOCK2-'].strip()
+            # 종목을 전부 입력하지 않았을 때
+            if not all(stock_names):
+                sg.popup("⚠️ 두 종목을 모두 입력하세요.")
+                continue
+            update_stock(0)
+            update_stock(1)
+
+    window.close()
+    for i in [1, 2]:
+        if os.path.exists(f'chart{i}.png'):
+            os.remove(f'chart{i}.png')
+
 # 메인 메뉴
 def main_menu():
     sg.theme('LightBlue')
@@ -323,7 +407,7 @@ def main_menu():
             search_stock_window()
         # 주식 비교 버튼
         elif event == '-COMPARE-':
-            print("👉 주식 비교 기능으로 이동")
+            compare_stock_window()
         # 인기 주식 버튼
         elif event == '-POPULAR-':
             print("👉 인기 주식 기능으로 이동")
