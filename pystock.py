@@ -45,9 +45,11 @@ def get_stock_info(stock_code):
     try:
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
+        # nxt 우선, krx 후순위
         rate_info = soup.select_one('div#rate_info_nxt[style*="display: block"]') or \
             soup.select_one('div#rate_info_krx')
-    
+
+        # 단위 및 결측값 처리
         def safe_text(selector, suffix='', default='N/A'):
             try:
                 text = selector.text.strip().replace(suffix, '').replace('\xa0', '')
@@ -82,7 +84,7 @@ def get_stock_info(stock_code):
         except Exception as e:
             print("❌ 전일대비/등락률 가져오기 실패 :", e)
 
-        # 시가 / 고가 / 저가 / 거래량 / 거래대금 (정확한 위치 기반 추출)
+        # 시가 / 고가 / 저가 / 거래량 / 거래대금
         try:
             label_map = {
                 '전일' : ('전일가', '원'),
@@ -205,7 +207,7 @@ def get_price_table(stock_code, pages=3):
 # 인기 종목 크롤링
 def get_popular_stock(limit=10):
     url = 'https://finance.naver.com/sise/nxt_sise_quant.naver'
-    headers = {'User-Agent': 'Mozilla/5.0'}
+    headers = {'User-Agent' : 'Mozilla/5.0'}
     res = requests.get(url, headers=headers)
     soup = BeautifulSoup(res.text, 'html.parser')
     table = soup.select_one('table.type_2')
@@ -233,10 +235,10 @@ def get_popular_stock(limit=10):
             diff_full = f"{diff_price}원 {direction}" if diff_price else direction
 
             stocks.append({
-                '종목명': name,
-                '현재가': current,
-                '전일비': diff_full,
-                '등락률': rate
+                '종목명' : name,
+                '현재가' : current,
+                '전일비' : diff_full,
+                '등락률' : rate
             })
 
             if len(stocks) == limit:
@@ -263,7 +265,7 @@ def plot_candle_chart(df, filename='chart.png'):
     mpf.plot(df, type='candle', style=s, volume=True, savefig=filename)
 
 # 주식 검색 창
-def search_stock_window():
+def search_stock_window(preset_name=None):
     layout = [
         [sg.Text('종목 이름을 입력하세요', font=('Helvetica', 16))],
         [sg.InputText(key='-STOCK-NAME-', font=('Helvetica', 16))],
@@ -273,10 +275,33 @@ def search_stock_window():
         [sg.Multiline(key='-INFO-', size=(70, 10), font=('Consolas', 16), disabled=True)]
     ]
 
-    window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c')
+    window = sg.Window('주식 검색', layout, modal=True, resizable=True, element_justification='c', finalize=True)
     chart_period = 'D'
     pages_map = {'D' : 3, 'W' : 15, 'M' : 60}
     last_stock_name = ''
+
+    # 인기 주식 창에서 매개변수로 종목 이름 들어온 경우
+    if preset_name:
+        window['-STOCK-NAME-'].update(preset_name)
+        last_stock_name = preset_name
+        matched_name, stock_code = get_stock_code(preset_name)
+        if stock_code:
+            # 종목 정보, 시세 정보 가져오기
+            info = get_stock_info(stock_code)
+            df = get_price_table(stock_code, pages=pages_map[chart_period])
+            # 주봉, 월봉인 경우 재구성
+            if chart_period in ['W', 'M']:
+                df = resample_ohlcv(df, rule=chart_period)
+            # 시세 차트 그리기
+            plot_candle_chart(df)
+            with open('chart.png', 'rb') as f:
+                img = f.read()
+            info_text = f"[{matched_name}] ({stock_code})\n"
+            # 종목 정보 출력
+            for k, v in info.items():
+                info_text += f"{k} : {v}\n"
+            window['-INFO-'].update(info_text)
+            window['-CHART-'].update(data=img)
 
     while True:
         event, values = window.read()
@@ -295,7 +320,7 @@ def search_stock_window():
                     window['-INFO-'].update("❌ 없는 주식입니다.")
                     window['-CHART-'].update(data=None)
                     continue
-                # 있는 경우 시세 정보 주기 가져오기
+                # 있는 경우 시세 정보, 주기 가져오기
                 df = get_price_table(stock_code, pages=pages_map[chart_period])
                 # 주봉, 월봉인 경우 재구성
                 if chart_period in ['W', 'M']:
@@ -343,6 +368,7 @@ def search_stock_window():
 
             # 크롤링에 성공했을 때
             info_text = f"[{matched_name}] ({stock_code})\n"
+            # 종목 정보 출력
             for k, v in info.items():
                 info_text += f"{k} : {v}\n"
 
@@ -396,12 +422,14 @@ def compare_stock_window():
         if chart_period in ['W', 'M']:
             df = resample_ohlcv(df, rule=chart_period)
         filename = f'chart{index+1}.png'
+        # 시세 차트 그리기
         plot_candle_chart(df, filename=filename)
         with open(filename, 'rb') as f:
             img = f.read()
         info_text = f"[{name}] ({code})\n"
+        # 종목 정보 출력
         for k, v in info.items():
-            info_text += f"{k}: {v}\n"
+            info_text += f"{k} : {v}\n"
         window[f'-INFO{index+1}-'].update(info_text)
         window[f'-CHART{index+1}-'].update(data=img)
 
@@ -432,6 +460,47 @@ def compare_stock_window():
         if os.path.exists(f'chart{i}.png'):
             os.remove(f'chart{i}.png')
 
+# 인기 주식 창
+def popular_stock_window():
+    stock_data = get_popular_stock()
+    header = ['종목명', '현재가', '전일비', '등락률']
+    values = [[stock['종목명'], stock['현재가'], stock['전일비'], stock['등락률']] for stock in stock_data]
+
+    layout = [
+        [sg.Text('인기 주식', font=('Helvetica', 16), justification='center', expand_x=True)],
+        # 인기 주식 표 그리기
+        [sg.Table(values=values,
+                  headings=header,
+                  key='-TABLE-',
+                  font=('Helvetica', 16),
+                  auto_size_columns=False,
+                  col_widths=[20, 12, 20, 10],
+                  justification='left',
+                  expand_x=True,
+                  num_rows=min(10, len(values)),
+                  enable_events=True,
+                  alternating_row_color='#f0f0f0')],
+        [sg.Button('뒤로가기', expand_x=True, font=('Helvetica', 16))]
+    ]
+
+    window = sg.Window('인기 주식', layout, modal=True, resizable=True, element_justification='c')
+
+    while True:
+        event, values_dict = window.read()
+        if event in (sg.WIN_CLOSED, '뒤로가기'):
+            break
+        # 종목 클릭 시 해당 종목 세부 정보 확인
+        if event == '-TABLE-' and values_dict['-TABLE-']:
+            selected_idx = values_dict['-TABLE-'][0]
+            selected_name = stock_data[selected_idx]['종목명']
+            window.close()
+            # 주식 검색 창으로 전환
+            search_stock_window(selected_name)
+            return
+
+    window.close()
+
+
 # 메인 메뉴
 def main_menu():
     sg.theme('LightBlue')
@@ -459,7 +528,7 @@ def main_menu():
             compare_stock_window()
         # 인기 주식 버튼
         elif event == '-POPULAR-':
-            print("👉 인기 주식 기능으로 이동")
+            popular_stock_window()
 
     window.close()
 
