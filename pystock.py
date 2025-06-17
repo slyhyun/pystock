@@ -246,7 +246,13 @@ def get_popular_stock(limit=10):
         except Exception as e:
             continue
     return stocks
-    
+
+# 캔들차트 이미지로 저장
+def plot_candle_chart(df, filename='chart.png'):
+    mc = mpf.make_marketcolors(up='red', down='blue', edge='inherit', wick='gray', volume='inherit')
+    s = mpf.make_mpf_style(marketcolors=mc, gridstyle='--')
+    mpf.plot(df, type='candle', style=s, volume=True, savefig=filename)
+
 # 캔들차트 재구성
 def resample_ohlcv(df, rule='W'):
     ohlcv = {
@@ -257,12 +263,6 @@ def resample_ohlcv(df, rule='W'):
         'Volume' : 'sum'
     }
     return df.resample(rule).apply(ohlcv).dropna()
-
-# 캔들차트 이미지로 저장
-def plot_candle_chart(df, filename='chart.png'):
-    mc = mpf.make_marketcolors(up='red', down='blue', edge='inherit', wick='gray', volume='inherit')
-    s = mpf.make_mpf_style(marketcolors=mc, gridstyle='--')
-    mpf.plot(df, type='candle', style=s, volume=True, savefig=filename)
 
 # 주식 검색 창
 def search_stock_window(preset_name=None):
