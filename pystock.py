@@ -45,7 +45,9 @@ def get_stock_info(stock_code):
     try:
         res = requests.get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
-
+        rate_info = soup.select_one('div#rate_info_nxt[style*="display: block"]') or \
+            soup.select_one('div#rate_info_krx')
+    
         def safe_text(selector, suffix='', default='N/A'):
             try:
                 text = selector.text.strip().replace(suffix, '').replace('\xa0', '')
@@ -54,24 +56,29 @@ def get_stock_info(stock_code):
                 return default
 
         # 현재가
-        info['현재가'] = safe_text(soup.select_one('p.no_today span.blind'), '원')
+        if rate_info:
+            info['현재가'] = safe_text(rate_info.select_one('p.no_today span.blind'), '원')
 
-        # 전일 대비 및 등락률
+        # 전일대비 및 등락률
         try:
-            # 전일 대비
-            diff_td = soup.select_one('th:contains("전일대비") + td em')
-            if diff_td:
-                span = diff_td.find('span')
-                direction_text = span.text.strip() if span else ''
-                full_text = diff_td.get_text(strip=True)
-                price_only = full_text.replace(direction_text, '').replace('원', '').strip()
-                info['전일 대비'] = f"{price_only}원 {direction_text}" if price_only else 'N/A'
-
-            # 등락률
-            rate_td = soup.select_one('th:contains("등락률") + td em')
-            if rate_td:
-                raw_rate = rate_td.text.strip().replace('상향', '').replace('하향', '').replace('%', '').strip()
-                info['등락률'] = raw_rate + '%' if raw_rate else 'N/A'
+            if rate_info:
+                diff_em = rate_info.select('p.no_exday em')
+                if len(diff_em) >= 2:
+                    # 전일대비
+                    diff_value = diff_em[0].select_one('span.blind')
+                    diff_dir = diff_em[0].select_one('span.ico')
+                    if diff_value:
+                        diff_text = diff_value.text.strip()
+                        direction = diff_dir.text.strip() if diff_dir else ''
+                        info['전일대비'] = f"{diff_text}원 {direction}" if diff_text else 'N/A'
+                    
+                    # 등락률
+                    rate_value = diff_em[1].select_one('span.blind')
+                    rate_sign = diff_em[1].select_one('span.ico')  # + 또는 - 부호
+                    if rate_value:
+                        sign = rate_sign.text.strip() if rate_sign else ''
+                        value = rate_value.text.strip()
+                        info['등락률'] = f"{sign}{value}%" if value else 'N/A'
         except Exception as e:
             print("❌ 전일대비/등락률 가져오기 실패 :", e)
 
@@ -86,7 +93,6 @@ def get_stock_info(stock_code):
                 '거래대금' : ('거래대금', '백만')
             }
 
-            rate_info = soup.select_one('div.rate_info')
             if rate_info:
                 for td in rate_info.select('table.no_info td'):
                     label_span = td.select_one('span.sptxt')
@@ -196,6 +202,49 @@ def get_price_table(stock_code, pages=3):
     df_all = df_all.sort_index()
     return df_all
 
+# 인기 종목 크롤링
+def get_popular_stock(limit=10):
+    url = 'https://finance.naver.com/sise/nxt_sise_quant.naver'
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    table = soup.select_one('table.type_2')
+    rows = table.select('tr')[2:]
+
+    stocks = []
+    for row in rows:
+        cols = row.select('td')
+        if len(cols) < 5:
+            continue
+        try:
+            name = cols[1].text.strip()
+            current = cols[2].text.strip() + '원'
+
+            # 전일비 금액
+            diff_price_tag = cols[3].select_one('span.tah')
+            diff_price = diff_price_tag.text.strip() if diff_price_tag else ''
+            # 전일비 방향 (상승/하락)
+            direction_tag = cols[3].select_one('span.blind')
+            direction = direction_tag.text.strip() if direction_tag else ''
+            # 등락률
+            rate = cols[4].text.strip()
+
+            # 완성된 전일비
+            diff_full = f"{diff_price}원 {direction}" if diff_price else direction
+
+            stocks.append({
+                '종목명': name,
+                '현재가': current,
+                '전일비': diff_full,
+                '등락률': rate
+            })
+
+            if len(stocks) == limit:
+                break
+        except Exception as e:
+            continue
+    return stocks
+    
 # 캔들차트 재구성
 def resample_ohlcv(df, rule='W'):
     ohlcv = {
